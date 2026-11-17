@@ -15,7 +15,7 @@ import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { BottomNav } from '../components/BottomNav';
 import { BottomSheetMenu } from '../components/BottomSheetMenu';
 import { deleteUser, signOut } from 'firebase/auth';
-import { doc, getDoc } from 'firebase/firestore';
+import { doc, getDoc, onSnapshot } from 'firebase/firestore';
 import { auth, db } from '../services/firebase';
 import { useFocusEffect } from '@react-navigation/native';
 import { buscarMeuApoiador } from '../services/apoiadores';
@@ -23,6 +23,23 @@ import { FotoPerfil } from '../components/FotoPerfil';
 import { deleteAccountData } from '../services/account';
 
 export function Perfil({ navigation }: any) {
+  const [meuClube, setMeuClube] = useState('Nenhum Moto Clube');
+  useEffect(() => {
+    const uid = auth.currentUser?.uid;
+    if (!uid) return;
+    let stopClub = () => {};
+    const stop = onSnapshot(doc(db, 'usuarios', uid), snapshot => {
+      stopClub();
+      const user = snapshot.data();
+      setMeuClube('Nenhum Moto Clube');
+      const clubId = user?.statusMotoclube === 'membro' ? user.motoclubeId
+        : user?.statusMotoclube === 'pendente' ? user.solicitacaoMotoclubeId : null;
+      if (clubId) stopClub = onSnapshot(doc(db, 'motoclubes', clubId), club => {
+        setMeuClube(club.exists() ? club.data().nome + (user?.statusMotoclube === 'pendente' ? ' — aguardando aprovação' : '') : 'Nenhum Moto Clube');
+      });
+    });
+    return () => {stop(); stopClub();};
+  }, []);
   const [temCadastroApoiador, setTemCadastroApoiador] = useState(false);
   useFocusEffect(useCallback(() => {
     let active = true;
@@ -90,7 +107,7 @@ export function Perfil({ navigation }: any) {
                 'Não foi possível apagar',
                 error?.code === 'auth/requires-recent-login'
                   ? 'Por segurança, saia, entre novamente e repita a exclusão.'
-                  : 'Tente novamente. Alguns dados podem já ter sido removidos.',
+                  : error?.message || 'Tente novamente. Alguns dados podem já ter sido removidos.',
               );
             }
           },
@@ -146,6 +163,10 @@ export function Perfil({ navigation }: any) {
             <MaterialCommunityIcons name="check-decagram" size={24} color="#E53935" />
           )}
         </View>
+
+        <TouchableOpacity style={styles.btnOutline} onPress={() => navigation.navigate('Motoclubes')} accessibilityRole="button" accessibilityLabel="Meu Moto Clube">
+          <View><Text style={styles.btnOutlineText}>Meu Moto Clube</Text><Text style={{color: '#AAAAAA'}}>{meuClube}</Text></View>
+        </TouchableOpacity>
 
         <Text style={styles.sectionTitle}>CONFIGURAÇÕES DA CONTA</Text>
 

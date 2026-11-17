@@ -1,4 +1,5 @@
-import React, { useState, useEffect } from 'react';
+import { useFocusEffect } from '@react-navigation/native';
+import React, { useState, useCallback } from 'react';
 import {
   View,
   Text,
@@ -31,7 +32,7 @@ export function PerfilDaMoto({ route, navigation }: any) {
   const [consumoMedio, setConsumoMedio] = useState<number | null>(null);
 
   // Busca o histórico de manutenções desta moto específica no Firestore
-  useEffect(() => {
+  useFocusEffect(useCallback(() => {
     const fetchHistorico = async () => {
       const user = auth.currentUser;
       if (!moto?.id || !user) return;
@@ -62,7 +63,7 @@ export function PerfilDaMoto({ route, navigation }: any) {
     };
 
     fetchHistorico();
-  }, [moto?.id]);
+  }, [moto?.id]));
 
   const handleExcluirMoto = () => {
     Alert.alert(
@@ -88,7 +89,7 @@ export function PerfilDaMoto({ route, navigation }: any) {
   };
 
   const renderHistoricoItem = ({ item }: { item: HistoricoManutencao }) => (
-    <View style={styles.historyCard}>
+    <TouchableOpacity accessibilityLabel={'Editar ' + item.categoria} onPress={() => navigation.navigate('FormularioManutencao', {motoId: moto.id, categoria: item.categoria, registro: item})} style={styles.historyCard}>
       <View style={styles.historyHeader}>
         <Text style={styles.historyService}>{item.categoria}</Text>
         <Text style={styles.historyDate}>{item.data}</Text>
@@ -96,7 +97,8 @@ export function PerfilDaMoto({ route, navigation }: any) {
       <Text style={styles.historyKm}>Hodômetro: {item.km} km</Text>
       {item.oficina ? <Text style={styles.historyDetails}>Local: {item.oficina}</Text> : null}
       {item.observacoes ? <Text style={styles.historyDetails}>Obs: {item.observacoes}</Text> : null}
-    </View>
+      <Text style={styles.historyDetails}>EDITAR REGISTRO</Text>
+    </TouchableOpacity>
   );
 
   const DetailRow = ({ label, value }: { label: string; value: unknown }) => {

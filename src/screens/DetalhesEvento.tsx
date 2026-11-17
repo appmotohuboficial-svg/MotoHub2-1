@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useEffect, useState } from 'react';
 import {
   View,
   Text,
@@ -12,12 +12,18 @@ import {
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
-import { deleteDoc, doc } from 'firebase/firestore';
+import { deleteDoc, doc, onSnapshot } from 'firebase/firestore';
 import { auth, db } from '../services/firebase';
 import { deleteUploadedImage } from '../services/imageUpload';
 
 export function DetalhesEvento({ navigation, route }: any) {
-  const evento = route?.params?.evento;
+  const [evento, setEvento] = useState(route?.params?.evento);
+  useEffect(() => {
+    const id = route?.params?.evento?.id;
+    if (id) return onSnapshot(doc(db, 'eventos', id), snapshot => {
+      if (snapshot.exists()) setEvento({...snapshot.data(), id: snapshot.id});
+    }, () => Alert.alert('Erro', 'Não foi possível atualizar o evento.'));
+  }, [route?.params?.evento?.id]);
   const isOrganizador = !!evento?.userId && evento.userId === auth.currentUser?.uid;
 
   const handleAbrirMapas = () => {
@@ -83,6 +89,7 @@ export function DetalhesEvento({ navigation, route }: any) {
           </View>
         </ImageBackground>
 
+        {isOrganizador && <TouchableOpacity style={styles.backButton} onPress={() => navigation.navigate('NovoEvento', {evento})}><Text style={{color: '#E53935'}}>EDITAR EVENTO</Text></TouchableOpacity>}
         {/* Info Section */}
         <View style={styles.infoSection}>
           

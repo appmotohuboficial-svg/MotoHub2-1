@@ -76,7 +76,46 @@ service cloud.firestore {
     }
 
     match /usuarios/{userId} {
-      allow create, read, update, delete: if owner(userId);
+      function validClubState(d) {
+        return (!('motoclubeId' in d) || d.motoclubeId == null || d.motoclubeId is string)
+          && (!('statusMotoclube' in d) || d.statusMotoclube in ['nenhum','pendente','membro','desligamento_pendente']);
+      }
+      allow read: if owner(userId);
+      allow create: if owner(userId) && validClubState(request.resource.data)
+        && request.resource.data.get('motoclubeId', null) == null
+        && request.resource.data.get('statusMotoclube', 'nenhum') == 'nenhum'
+        && request.resource.data.get('solicitacaoMotoclubeId', null) == null
+        && request.resource.data.get('motoclubeNome', null) == null;
+      allow update: if owner(userId) && validClubState(request.resource.data)
+        && !request.resource.data.diff(resource.data).affectedKeys().hasAny(['motoclubeId','statusMotoclube','motoclubeNome','solicitacaoMotoclubeId']);
+      allow delete: if owner(userId) && resource.data.get('motoclubeId', null) == null
+        && resource.data.get('solicitacaoMotoclubeId', null) == null;
+    }
+
+    // CNPJ privado e motivos administrativos ficam em documentos separados.
+    // Escritas passam exclusivamente pela callable autenticada e transacional.
+    match /motoclubes/{clubId} {
+      function responsible() {
+        return signedIn() && get(/databases/$(database)/documents/motoclubes/$(clubId)).data.responsavelUserId == request.auth.uid;
+      }
+      allow read: if signedIn();
+      allow write: if false;
+      match /solicitacoes/{uid} {
+        allow read: if owner(uid) || responsible();
+        allow write: if false;
+      }
+      match /membros/{uid} {
+        allow read: if responsible() || owner(uid);
+        allow write: if false;
+      }
+      match /privado/{id} {
+        allow read: if responsible();
+        allow write: if false;
+      }
+      match /historico/{id} {
+        allow read: if responsible();
+        allow write: if false;
+      }
     }
 
     match /motos/{motoId} {

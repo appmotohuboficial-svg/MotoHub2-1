@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useRef } from 'react';
 import {
   View,
   Text,
@@ -18,10 +18,10 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import DateTimePicker from '@react-native-community/datetimepicker';
 import * as ImagePicker from 'expo-image-picker';
-import { collection, addDoc, serverTimestamp, Timestamp } from 'firebase/firestore';
+import { collection, addDoc, serverTimestamp, Timestamp, doc, getDoc, updateDoc } from 'firebase/firestore';
 import { db, auth } from '../services/firebase';
 import { useTemporaryImage } from '../hooks/useTemporaryImage';
-import { formatarHorario } from '../utils/datas';
+import { dataLocal, formatarHorario } from '../utils/datas';
 import { deleteUploadedImage, uploadLocalImage } from '../services/imageUpload';
 
 const LISTA_ESTRUTURAS = [
@@ -35,25 +35,27 @@ const LISTA_ESTRUTURAS = [
   { id: 'chuveiro', label: 'Chuveiro Quente' },
 ];
 
-export function NovoEvento({ navigation }: any) {
+export function NovoEvento({ navigation, route }: any) {
+  const evento = route?.params?.evento;
+  const trava = useRef(false);
   const [flyerUri, setFlyerUri] = useTemporaryImage();
   const [salvando, setSalvando] = useState(false);
 
-  const [nomeEvento, setNomeEvento] = useState('');
-  const [cidade, setCidade] = useState('');
-  const [uf, setUf] = useState('');
-  const [local, setLocal] = useState('');
-  const [organizador, setOrganizador] = useState('');
-  const [contato, setContato] = useState('');
-  const [outros, setOutros] = useState('');
+  const [nomeEvento, setNomeEvento] = useState(evento?.nomeEvento || '');
+  const [cidade, setCidade] = useState(evento?.cidade || '');
+  const [uf, setUf] = useState(evento?.uf || '');
+  const [local, setLocal] = useState(evento?.local || '');
+  const [organizador, setOrganizador] = useState(evento?.organizador || '');
+  const [contato, setContato] = useState(evento?.contato || '');
+  const [outros, setOutros] = useState(evento?.outros || '');
 
-  const [dataInicio, setDataInicio] = useState(() => { const data = new Date(); data.setHours(8, 0, 0, 0); return data; });
-  const [dataFim, setDataFim] = useState(() => { const data = new Date(); data.setHours(18, 0, 0, 0); return data; });
+  const [dataInicio, setDataInicio] = useState(() => { const existente = dataLocal(evento?.dataInicio, evento?.horarioInicio || '08:00'); if (existente) return existente; const data = new Date(); data.setHours(8, 0, 0, 0); return data; });
+  const [dataFim, setDataFim] = useState(() => { const existente = dataLocal(evento?.dataFim || evento?.dataInicio, evento?.horarioFim || '18:00'); if (existente) return existente; const data = new Date(); data.setHours(18, 0, 0, 0); return data; });
   const [showPickerInicio, setShowPickerInicio] = useState(false);
   const [showPickerFim, setShowPickerFim] = useState(false);
   const [pickerHorario, setPickerHorario] = useState<'inicio' | 'fim' | null>(null);
 
-  const [estruturasSelecionadas, setEstruturasSelecionadas] = useState<string[]>([]);
+  const [estruturasSelecionadas, setEstruturasSelecionadas] = useState<string[]>(evento?.estruturas || []);
 
   const formatarData = (data: Date) => data.toLocaleDateString('pt-BR');
 
@@ -86,6 +88,7 @@ export function NovoEvento({ navigation }: any) {
 
   // Nova função para salvar no Firebase
   const handleSalvarEvento = async () => {
+    if (trava.current) return;
     if (!nomeEvento.trim() || !cidade.trim() || uf.trim().length !== 2) {
       Alert.alert('Atenção', 'Por favor, preencha ao menos o nome do evento, cidade e UF.');
       return;
@@ -99,17 +102,21 @@ export function NovoEvento({ navigation }: any) {
     let flyerPath = '';
 
     try {
-      setSalvando(true);
+      trava.current = true; setSalvando(true);
       const user = auth.currentUser;
       if (!user) {
         Alert.alert('Erro', 'Você precisa estar logado para cadastrar um evento.');
         return;
       }
 
+      if (evento?.id) {
+        const atual = await getDoc(doc(db, 'eventos', evento.id));
+        if (!atual.exists() || atual.data().userId !== user.uid) throw new Error('Sem permissão para editar este evento.');
+      }
       flyerPath = flyerUri ? `eventos/${user.uid}/${Date.now()}.jpg` : '';
       const uploadedFlyerUrl = flyerUri
         ? await uploadLocalImage(flyerUri, flyerPath)
-        : '';
+        : evento?.flyerUri || '';
 
       const expiresAt = new Date(dataFim);
       expiresAt.setSeconds(0, 0);
@@ -133,16 +140,18 @@ export function NovoEvento({ navigation }: any) {
         estruturas: estruturasSelecionadas,
         outros: outros.trim(),
         flyerUri: uploadedFlyerUrl,
-        flyerPath,
-        flyerMetadata: uploadedFlyerUrl ? {
+        flyerPath: flyerPath || evento?.flyerPath || '',
+        flyerMetadata: flyerPath ? {
           fileName: flyerPath.split('/').pop(),
           contentType: 'image/jpeg',
-        } : null,
-        createdAt: serverTimestamp(),
+        } : evento?.flyerMetadata || null,
+        updatedAt: serverTimestamp(),
       };
 
       // Gravando na coleção 'eventos'
-      await addDoc(collection(db, 'eventos'), dadosEvento);
+      if (evento?.id) await updateDoc(doc(db, 'eventos', evento.id), dadosEvento);
+      else await addDoc(collection(db, 'eventos'), { ...dadosEvento, createdAt: serverTimestamp() });
+      if (flyerPath && evento?.flyerPath) await deleteUploadedImage(evento.flyerPath).catch(() => undefined);
 
       Alert.alert('Sucesso', 'Evento cadastrado com sucesso!', [
         { text: 'OK', onPress: () => navigation?.goBack() }
@@ -153,7 +162,7 @@ export function NovoEvento({ navigation }: any) {
       }
       Alert.alert('Erro', 'Não foi possível salvar o evento: ' + error.message);
     } finally {
-      setSalvando(false);
+      trava.current = false; setSalvando(false);
     }
   };
 
@@ -178,7 +187,7 @@ export function NovoEvento({ navigation }: any) {
               </TouchableOpacity>
             </View>
             <View style={styles.headerTexts}>
-              <Text style={styles.title}>Novo Evento</Text>
+              <Text style={styles.title}>{evento ? 'Editar Evento' : 'Novo Evento'}</Text>
               <View style={styles.redLine} />
               <Text style={styles.subtitle}>Divulgue seu encontro para a comunidade</Text>
             </View>
@@ -193,8 +202,8 @@ export function NovoEvento({ navigation }: any) {
           
           <Text style={styles.sectionTitle}>FLYER DO EVENTO</Text>
           <TouchableOpacity style={styles.uploadContainer} activeOpacity={0.8} onPress={selecionarImagem}>
-            {flyerUri ? (
-              <Image source={{ uri: flyerUri }} style={styles.flyerImage} resizeMode="contain" />
+            {(flyerUri || evento?.flyerUri) ? (
+              <Image source={{ uri: flyerUri || evento?.flyerUri }} style={styles.flyerImage} resizeMode="contain" />
             ) : (
               <>
                 <MaterialCommunityIcons name="image-plus" size={48} color="#E53935" />
@@ -369,7 +378,7 @@ export function NovoEvento({ navigation }: any) {
             {salvando ? (
               <ActivityIndicator color="#FFFFFF" />
             ) : (
-              <Text style={styles.btnPrimaryText}>CADASTRAR EVENTO</Text>
+              <Text style={styles.btnPrimaryText}>{evento ? 'SALVAR ALTERAÇÕES' : 'CADASTRAR EVENTO'}</Text>
             )}
           </TouchableOpacity>
 

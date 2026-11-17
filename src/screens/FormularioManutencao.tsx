@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useRef } from 'react';
 import {
   View,
   Text,
@@ -15,50 +15,57 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import DateTimePicker from '@react-native-community/datetimepicker';
-import { collection, addDoc, updateDoc, doc, serverTimestamp } from 'firebase/firestore';
-import { db } from '../services/firebase';
+import { collection, doc, serverTimestamp, runTransaction } from 'firebase/firestore';
+import { db, auth } from '../services/firebase';
+
+import { dataLocal } from '../utils/datas';
 
 export function FormularioManutencao({ route, navigation }: any) {
+  const registro = route?.params?.registro;
+  const trava = useRef(false);
+  const [salvando, setSalvando] = useState(false);
   const categoriaSelecionada = route?.params?.categoria || 'Geral';
   const motoId = route?.params?.motoId; // ID da moto passada por parâmetro
 
   const isAdministrativo = categoriaSelecionada === 'Seguro' || categoriaSelecionada === 'Documentos';
 
   // Estados de Data com Objeto Date para o Calendário Nativo
-  const [data, setData] = useState(new Date());
+  const [data, setData] = useState(dataLocal(registro?.data) || new Date());
   const [showDatePicker, setShowDatePicker] = useState(false);
 
-  const [dataVencimento, setDataVencimento] = useState(new Date());
+  const [dataVencimento, setDataVencimento] = useState(dataLocal(registro?.dataVencimento) || new Date());
   const [showVencimentoPicker, setShowVencimentoPicker] = useState(false);
 
-  const [observacoes, setObservacoes] = useState('');
+  const [observacoes, setObservacoes] = useState(String(registro?.observacoes ?? ''));
   
   // Estados Mecânicos
-  const [km, setKm] = useState('');
-  const [oficina, setOficina] = useState('');
-  const [trocouFiltro, setTrocouFiltro] = useState(false);
-  const [marcaOleo, setMarcaOleo] = useState('');
-  const [posicao, setPosicao] = useState(''); 
-  const [marcaPeca, setMarcaPeca] = useState('');
+  const [km, setKm] = useState(String(registro?.km ?? ''));
+  const [oficina, setOficina] = useState(String(registro?.oficina ?? ''));
+  const [trocouFiltro, setTrocouFiltro] = useState(!!registro?.trocouFiltro);
+  const [marcaOleo, setMarcaOleo] = useState(String(registro?.marcaOleo ?? ''));
+  const [posicao, setPosicao] = useState(String(registro?.posicao ?? '')); 
+  const [marcaPeca, setMarcaPeca] = useState(String(registro?.marcaPeca ?? ''));
 
   // Estados Administrativos
-  const [seguradora, setSeguradora] = useState('');
-  const [apolice, setApolice] = useState('');
-  const [tipoDoc, setTipoDoc] = useState('');
-  const [anoExercicio, setAnoExercicio] = useState('');
-  const [valorPago, setValorPago] = useState('');
-  const [formaPagamento, setFormaPagamento] = useState('');
+  const [seguradora, setSeguradora] = useState(String(registro?.seguradora ?? ''));
+  const [apolice, setApolice] = useState(String(registro?.apolice ?? ''));
+  const [tipoDoc, setTipoDoc] = useState(String(registro?.tipoDoc ?? ''));
+  const [anoExercicio, setAnoExercicio] = useState(String(registro?.anoExercicio ?? ''));
+  const [valorPago, setValorPago] = useState(String(registro?.valorPago ?? ''));
+  const [formaPagamento, setFormaPagamento] = useState(String(registro?.formaPagamento ?? ''));
 
   const formatDate = (date: Date) => {
     return date.toLocaleDateString('pt-BR');
   };
 
   const handleSalvarManutencao = async () => {
+    if (trava.current) return;
     if (!motoId) {
       Alert.alert('Atenção', 'Nenhuma moto vinculada. Volte e selecione uma moto.');
       return;
     }
 
+    trava.current = true; setSalvando(true);
     try {
       const dadosManutencao = {
         motoId,
@@ -78,26 +85,29 @@ export function FormularioManutencao({ route, navigation }: any) {
         valorPago,
         dataVencimento: isAdministrativo ? formatDate(dataVencimento) : '',
         formaPagamento,
-        createdAt: serverTimestamp(),
+        updatedAt: serverTimestamp(),
       };
 
-      // 1. Salva o registro na coleção 'manutencoes' do Firestore
-      await addDoc(collection(db, 'motos', motoId, 'manutencoes'), dadosManutencao);
-      
-      // 2. Se informou KM, atualiza o hodômetro da moto automaticamente na Garagem
-      if (km) {
-        const motoRef = doc(db, 'motos', motoId);
-        await updateDoc(motoRef, {
-          hodometro: km
-        });
-      }
+      const motoRef = doc(db, 'motos', motoId);
+      const registroRef = registro?.id ? doc(db, 'motos', motoId, 'manutencoes', registro.id)
+        : doc(collection(db, 'motos', motoId, 'manutencoes'));
+      await runTransaction(db, async tx => {
+        const moto = await tx.get(motoRef);
+        const anterior = registro?.id ? await tx.get(registroRef) : null;
+        if (!auth.currentUser || moto.data()?.userId !== auth.currentUser.uid) throw new Error('Sem permissão para esta moto.');
+        if (registro?.id && !anterior?.exists()) throw new Error('Registro não encontrado.');
+        if (registro?.id) tx.update(registroRef, dadosManutencao);
+        else tx.set(registroRef, { ...dadosManutencao, createdAt: serverTimestamp() });
+        // Corrigir um registro antigo não deve reduzir o hodômetro atual.
+        if (!registro?.id && km) tx.update(motoRef, { hodometro: km });
+      });
 
       Alert.alert('Sucesso', `${categoriaSelecionada} registrada com sucesso!`, [
         { text: 'OK', onPress: () => navigation?.goBack() }
       ]);
     } catch (error: any) {
       Alert.alert('Erro', 'Não foi possível salvar: ' + error.message);
-    }
+    } finally { trava.current = false; setSalvando(false); }
   };
 
   const renderPillSelector = (opcoes: string[], stateAtual: string, setState: (val: string) => void) => (
@@ -354,8 +364,8 @@ export function FormularioManutencao({ route, navigation }: any) {
             onChangeText={setObservacoes}
           />
 
-          <TouchableOpacity style={styles.btnPrimary} onPress={handleSalvarManutencao} activeOpacity={0.8}>
-            <Text style={styles.btnPrimaryText}>SALVAR REGISTRO</Text>
+          <TouchableOpacity style={styles.btnPrimary} onPress={handleSalvarManutencao} disabled={salvando} activeOpacity={0.8}>
+            <Text style={styles.btnPrimaryText}>{salvando ? 'SALVANDO...' : registro?.id ? 'SALVAR ALTERAÇÕES' : 'SALVAR REGISTRO'}</Text>
           </TouchableOpacity>
 
         </ScrollView>

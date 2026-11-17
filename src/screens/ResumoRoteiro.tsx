@@ -1,7 +1,7 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { ActivityIndicator, Alert, ScrollView, StatusBar, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { collection, doc, setDoc, serverTimestamp } from 'firebase/firestore';
+import { collection, doc, setDoc, updateDoc, getDoc, serverTimestamp } from 'firebase/firestore';
 import { db, auth } from '../services/firebase';
 import { ResultadoRota, tracarRota } from '../services/rotas';
 import { codificarRota, formatarDuracao, normalizarPassagens, normalizarPontosIntermediarios } from '../utils/roteiro';
@@ -53,13 +53,18 @@ export function ResumoRoteiro({ navigation, route }: any) {
         distancia, tempoEstimado: tempo, combustivelEstimado: combustivel, localEncontro,
         passagens, pontosIntermediarios, rotaPolyline: codificarRota(resultado.coordenadas), pontosRota: resultado.pontos,
         distanciaKm: resultado.distanciaKm, duracaoSegundos: resultado.duracaoSegundos,
-        dataPartida, dataRetorno, observacoes, isPublica, createdAt: serverTimestamp(),
+        dataPartida, dataRetorno, observacoes, isPublica, updatedAt: serverTimestamp(),
       };
       // Mesmo ID em uma tentativa repetida evita viagens duplicadas após falha de rede.
       documento.current ??= doc(collection(db, 'viagens'));
-      await setDoc(documento.current, novaViagem);
+      if (dados.viagemId) {
+        const ref = doc(db, 'viagens', dados.viagemId);
+        const anterior = await getDoc(ref);
+        if (!anterior.exists() || anterior.data().userId !== user.uid) throw new Error('Sem permissão para editar esta viagem.');
+        await updateDoc(ref, novaViagem);
+      } else await setDoc(documento.current, { ...novaViagem, createdAt: serverTimestamp() });
       setSalvo(true);
-      Alert.alert('Sucesso', 'Roteiro salvo!', [{ text: 'OK', onPress: () => navigation.navigate('Viagens') }]);
+      Alert.alert('Sucesso', 'Roteiro salvo!', [{ text: 'OK', onPress: () => navigation.popTo('Viagens') }]);
     } catch (error: any) { Alert.alert('Erro ao salvar', error?.message || 'Tente novamente.'); }
     finally { trava.current = false; setSalvando(false); }
   };

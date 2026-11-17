@@ -22,9 +22,13 @@ import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { collection, query, where, getDocs } from 'firebase/firestore';
 import { db, auth } from '../services/firebase';
 import { calcularConsumoMedio } from '../services/consumo';
-import { MAX_PASSAGENS, PontoIntermediario, TipoPontoIntermediario } from '../utils/roteiro';
+import { normalizarPontosIntermediarios, MAX_PASSAGENS, PontoIntermediario, TipoPontoIntermediario } from '../utils/roteiro';
 
-export function NovaViagem({ navigation }: any) {
+import { dataLocal } from '../utils/datas';
+
+export function NovaViagem({ navigation, route }: any) {
+  const viagem = route?.params?.viagem;
+  const separar = (v = '') => { const p = /^(.*) - ([A-Za-z]{2})$/.exec(v); return p ? [p[1], p[2]] : [v, '']; };
   const [motos, setMotos] = useState<any[]>([]);
   const [motoSelecionada, setMotoSelecionada] = useState<any>(null);
   const [modalVisible, setModalVisible] = useState(false);
@@ -32,18 +36,18 @@ export function NovaViagem({ navigation }: any) {
   const [calculandoMedia, setCalculandoMedia] = useState(false);
   const [temDadosAbastecimento, setTemDadosAbastecimento] = useState(true);
 
-  const [cidadeOrigem, setCidadeOrigem] = useState('');
-  const [ufOrigem, setUfOrigem] = useState('');
-  const [cidadeDestino, setCidadeDestino] = useState('');
-  const [ufDestino, setUfDestino] = useState('');
-  const [pontosIntermediarios, setPontosIntermediarios] = useState<PontoIntermediario[]>([]);
-  const [localEncontro, setLocalEncontro] = useState('');
-  const [consumoMedio, setConsumoMedio] = useState('');
-  const [observacoes, setObservacoes] = useState('');
-  const [isPublica, setIsPublica] = useState(false);
+  const [cidadeOrigem, setCidadeOrigem] = useState(separar(viagem?.origem)[0]);
+  const [ufOrigem, setUfOrigem] = useState(separar(viagem?.origem)[1]);
+  const [cidadeDestino, setCidadeDestino] = useState(separar(viagem?.destino)[0]);
+  const [ufDestino, setUfDestino] = useState(separar(viagem?.destino)[1]);
+  const [pontosIntermediarios, setPontosIntermediarios] = useState<PontoIntermediario[]>(normalizarPontosIntermediarios(viagem?.pontosIntermediarios, viagem?.passagens));
+  const [localEncontro, setLocalEncontro] = useState(viagem?.localEncontro || '');
+  const [consumoMedio, setConsumoMedio] = useState(String(viagem?.consumoMedio ?? ''));
+  const [observacoes, setObservacoes] = useState(viagem?.observacoes || '');
+  const [isPublica, setIsPublica] = useState(!!viagem?.isPublica);
 
-  const [dataPartida, setDataPartida] = useState(new Date());
-  const [dataRetorno, setDataRetorno] = useState(new Date());
+  const [dataPartida, setDataPartida] = useState(dataLocal(viagem?.dataPartida) || new Date());
+  const [dataRetorno, setDataRetorno] = useState(dataLocal(viagem?.dataRetorno) || new Date());
   const [showPickerPartida, setShowPickerPartida] = useState(false);
   const [showPickerRetorno, setShowPickerRetorno] = useState(false);
 
@@ -66,7 +70,7 @@ export function NovaViagem({ navigation }: any) {
 
         setMotos(listaMotos);
         if (listaMotos.length > 0) {
-          setMotoSelecionada(listaMotos[0]);
+          setMotoSelecionada(listaMotos.find(m => m.id === viagem?.motoId) || listaMotos[0]);
         }
       } catch (error) {
         console.log('Erro ao buscar motos:', error);
@@ -80,7 +84,7 @@ export function NovaViagem({ navigation }: any) {
   // 2. Busca e calcula a média de forma 100% segura no App (sem exigir índice do Firebase)
   useEffect(() => {
     const calcularMediaHistorica = async () => {
-      if (!motoSelecionada) return;
+      if (!motoSelecionada || (viagem && motoSelecionada.id === viagem.motoId)) return;
       
       setCalculandoMedia(true);
       setConsumoMedio('');
@@ -161,6 +165,7 @@ export function NovaViagem({ navigation }: any) {
     const passagensValidas = pontosValidos.map((item) => item.local);
 
     const dadosViagem = {
+      viagemId: viagem?.id || null,
       motoId: motoSelecionada.id,
       motoNome: `${motoSelecionada.marca} ${motoSelecionada.modelo}`,
       origem: origemCompleta,
@@ -199,7 +204,7 @@ export function NovaViagem({ navigation }: any) {
               </TouchableOpacity>
             </View>
             <View style={styles.headerTexts}>
-              <Text style={styles.title}>Nova Viagem</Text>
+              <Text style={styles.title}>{viagem ? 'Editar Viagem' : 'Nova Viagem'}</Text>
               <View style={styles.redLine} />
               <Text style={styles.subtitle}>Trace seu roteiro</Text>
             </View>

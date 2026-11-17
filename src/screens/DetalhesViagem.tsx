@@ -1,14 +1,20 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { Alert, Linking, ScrollView, StatusBar, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { deleteDoc, doc } from 'firebase/firestore';
+import { deleteDoc, doc, onSnapshot } from 'firebase/firestore';
 import { auth, db } from '../services/firebase';
 import { tracarRota } from '../services/rotas';
 import { CoordenadaRota, criarUrlGoogleMaps, lerRotaSalva, normalizarPassagens, normalizarPontosIntermediarios } from '../utils/roteiro';
 import { MapaRoteiro } from '../components/MapaRoteiro';
 
 export function DetalhesViagem({ route, navigation }: any) {
-  const viagem = route?.params?.viagem || {};
+  const [viagem, setViagem] = useState(route?.params?.viagem || {});
+  useEffect(() => {
+    const id = route?.params?.viagem?.id;
+    if (id) return onSnapshot(doc(db, 'viagens', id), snapshot => {
+      if (snapshot.exists()) setViagem({...snapshot.data(), id: snapshot.id});
+    }, () => Alert.alert('Erro', 'Não foi possível atualizar a viagem.'));
+  }, [route?.params?.viagem?.id]);
   const [coordenadas, setCoordenadas] = useState<CoordenadaRota[]>([]);
   const [pontos, setPontos] = useState<CoordenadaRota[]>([]);
   const [carregando, setCarregando] = useState(true);
@@ -70,6 +76,7 @@ export function DetalhesViagem({ route, navigation }: any) {
         <View><Text style={styles.texto}>Tempo</Text><Text style={styles.valor}>{viagem.tempoEstimado || '--'}</Text></View>
       </View>
       <TouchableOpacity style={styles.botao} onPress={handleIniciar}><Text style={styles.botaoTexto}>INICIAR VIAGEM</Text></TouchableOpacity>
+      {isCriador && <TouchableOpacity style={styles.excluir} onPress={() => navigation.navigate('NovaViagem', {viagem})}><Text style={styles.link}>EDITAR ROTEIRO</Text></TouchableOpacity>}
       {isCriador && <TouchableOpacity style={styles.excluir} onPress={handleExcluir}><Text style={styles.link}>EXCLUIR ROTEIRO</Text></TouchableOpacity>}
     </ScrollView>
   </SafeAreaView>;

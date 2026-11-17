@@ -3,6 +3,7 @@ import {
   deleteDoc,
   doc,
   getDocs,
+  getDoc,
   query,
   where,
 } from 'firebase/firestore';
@@ -17,6 +18,12 @@ async function deleteOwnedCollection(collectionName: string, userId: string) {
 }
 
 export async function deleteAccountData(userId: string) {
+  const profile = (await getDoc(doc(db, 'usuarios', userId))).data();
+  if (profile?.motoclubeId || profile?.solicitacaoMotoclubeId) {
+    throw new Error('Conclua o desligamento ou cancele a solicitação no Motoclube antes de apagar a conta.');
+  }
+  const clubs = await getDocs(query(collection(db, 'motoclubes'), where('responsavelUserId', '==', userId)));
+  if (!clubs.empty) throw new Error('Você é responsável por um Motoclube. Regularize a administração antes de apagar a conta.');
   const motos = await getDocs(
     query(collection(db, 'motos'), where('userId', '==', userId)),
   );
