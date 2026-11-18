@@ -57,7 +57,8 @@ function screenFixture(file, params, seed, overrides = {}) {
 test('editar manutenção preenche dados, atualiza mesmo registro e preserva criação e hodômetro', async () => {
   const registro={id:'record',categoria:'Óleo',data:'20/10/2026',dataVencimento:'',km:'20000',observacoes:'original',oficina:'Oficina',marcaOleo:'10W40',trocouFiltro:true,createdAt:'OLD_TIMESTAMP'};
   const f=screenFixture('FormularioManutencao',{motoId:'bike',categoria:'Óleo',registro},{'motos/bike':{userId:'owner',hodometro:'30000'},'motos/bike/manutencoes/record':registro});
-  f.render(); f.change('Detalhes adicionais...','Corrigido'); await f.save('handleSalvarManutencao');
+  f.render(); f.effects[0](); await new Promise(resolve=>setImmediate(resolve)); f.render();
+  f.change('Detalhes adicionais...','Corrigido'); await f.save('handleSalvarManutencao');
   assert.equal(f.alerts.at(-1)?.[0], 'Sucesso', JSON.stringify(f.alerts));
   const result=f.store.get('motos/bike/manutencoes/record');
   assert.equal(result.observacoes,'Corrigido'); assert.equal(result.data,'20/10/2026');assert.equal(result.marcaOleo,'10W40');assert.equal(result.trocouFiltro,true);
@@ -66,7 +67,8 @@ test('editar manutenção preenche dados, atualiza mesmo registro e preserva cri
 });
 test('edição de manutenção de outra pessoa não grava nem informa sucesso', async () => {
   const f=screenFixture('FormularioManutencao',{motoId:'bike',categoria:'Óleo',registro:{id:'record'}},{'motos/bike':{userId:'other'},'motos/bike/manutencoes/record':{}});
-  f.render();await f.save('handleSalvarManutencao'); assert.deepEqual(f.writes,[]);assert.equal(f.alerts.at(-1)[0],'Erro');
+  f.render(); f.effects[0](); await new Promise(resolve=>setImmediate(resolve)); f.render();
+  await f.save('handleSalvarManutencao'); assert.deepEqual(f.writes,[]);assert.equal(f.alerts.at(-1)[0],'Erro');
 });
 test('editar evento preserva flyer e data de criação, corrige campos e recalcula expiração', async () => {
   const evento={id:'event',userId:'owner',nomeEvento:'Encontro',cidade:'São Paulo',uf:'SP',local:'Local antigo',dataInicio:'20/11/2026',dataFim:'21/11/2026',horarioInicio:'10:30',horarioFim:'18:45',estruturas:['camping'],flyerUri:'https://example.test/banner',flyerPath:'eventos/owner/original.jpg',flyerMetadata:{fileName:'original.jpg',contentType:'image/jpeg'},createdAt:'OLD_TIMESTAMP'};

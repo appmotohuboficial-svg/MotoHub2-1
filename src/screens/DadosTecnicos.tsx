@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import {
   View,
   Text,
@@ -7,51 +7,54 @@ import {
   StyleSheet,
   ScrollView,
   StatusBar,
-  Alert,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
+import { CommonActions } from '@react-navigation/native';
+import { useSalvarMoto } from '../hooks/useSalvarMoto';
 
-export function DadosTecnicos({ navigation }: any) {
-  const [tipoOleo, setTipoOleo] = useState('Mineral');
-  const [viscosidade, setViscosidade] = useState('');
-  const [pressaoDianteira, setPressaoDianteira] = useState('');
-  const [pressaoTraseira, setPressaoTraseira] = useState('');
-  const [tipoCombustivel, setTipoCombustivel] = useState('Comum');
-  const [capacidadeTanque, setCapacidadeTanque] = useState('');
-  const [fluidoFreio, setFluidoFreio] = useState('DOT 4');
-  const [filtroAr, setFiltroAr] = useState('Convencional');
+export function DadosTecnicos({ navigation, route }: any) {
+  const anteriores = route?.params?.dadosTecnicos || {};
+  const [tipoOleo, setTipoOleo] = useState(anteriores.tipoOleo || 'Mineral');
+  const [viscosidade, setViscosidade] = useState(anteriores.viscosidade || '');
+  const [pressaoDianteira, setPressaoDianteira] = useState(anteriores.pressaoDianteira || '');
+  const [pressaoTraseira, setPressaoTraseira] = useState(anteriores.pressaoTraseira || '');
+  const [tipoCombustivel, setTipoCombustivel] = useState(anteriores.tipoCombustivel || 'Comum');
+  const [capacidadeTanque, setCapacidadeTanque] = useState(anteriores.capacidadeTanque || '');
+  const [fluidoFreio, setFluidoFreio] = useState(anteriores.fluidoFreio || 'DOT 4');
+  const [filtroAr, setFiltroAr] = useState(anteriores.filtroAr || 'Convencional');
+  const { salvar, salvando } = useSalvarMoto(navigation);
 
-  const handleSalvarFicha = () => {
-    const dadosTecnicos = {
-      tipoOleo,
-      viscosidade: viscosidade.trim(),
-      pressaoDianteira: pressaoDianteira.trim(),
-      pressaoTraseira: pressaoTraseira.trim(),
-      tipoCombustivel,
-      capacidadeTanque: capacidadeTanque.trim(),
-      fluidoFreio,
-      filtroAr,
-    };
-    navigation.navigate({
-      name: 'NovoCadastroMotos',
-      params: { dadosTecnicos },
-      merge: true,
+  const dadosTecnicos = { tipoOleo, viscosidade, pressaoDianteira, pressaoTraseira,
+    tipoCombustivel, capacidadeTanque, fluidoFreio, filtroAr };
+
+  // Atualiza somente o rascunho da tela original, inclusive ao voltar pelo Android.
+  // Não navega, não cria outra tela e não grava nada no banco enquanto se digita.
+  useEffect(() => {
+    const source = route?.params?.cadastroRouteKey;
+    if (!source) return;
+    navigation.dispatch({
+      ...CommonActions.setParams({ dadosTecnicos: { tipoOleo, viscosidade, pressaoDianteira,
+        pressaoTraseira, tipoCombustivel, capacidadeTanque, fluidoFreio, filtroAr } }),
+      source,
     });
-  };
+  }, [navigation, route?.params?.cadastroRouteKey, tipoOleo, viscosidade, pressaoDianteira,
+    pressaoTraseira, tipoCombustivel, capacidadeTanque, fluidoFreio, filtroAr]);
+
+  const handleSalvarFicha = () => salvar(route?.params?.cadastro, dadosTecnicos);
 
   return (
     <SafeAreaView style={styles.container}>
       <StatusBar barStyle="light-content" backgroundColor="#121212" />
 
       <View style={styles.header}>
-        <TouchableOpacity style={styles.backButton} onPress={() => navigation?.goBack()}>
+        <TouchableOpacity style={styles.backButton} onPress={() => navigation?.goBack()} disabled={salvando}>
           <Text style={styles.backButtonText}>&lt;</Text>
         </TouchableOpacity>
         <Text style={styles.headerTitle}>FICHA TÉCNICA</Text>
         <View style={{ width: 48 }} />
       </View>
 
-      <ScrollView contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false}>
+      <ScrollView contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false} keyboardShouldPersistTaps="handled">
         
         {/* MOTOR E LUBRIFICANTES */}
         <Text style={styles.sectionTitle}>MOTOR E LUBRIFICANTES</Text>
@@ -145,8 +148,8 @@ export function DadosTecnicos({ navigation }: any) {
           ))}
         </View>
 
-        <TouchableOpacity style={styles.btnPrimary} onPress={handleSalvarFicha}>
-          <Text style={styles.btnPrimaryText}>SALVAR FICHA TÉCNICA</Text>
+        <TouchableOpacity style={styles.btnPrimary} onPress={handleSalvarFicha} disabled={salvando}>
+          <Text style={styles.btnPrimaryText}>{salvando ? 'SALVANDO...' : 'SALVAR MOTO NA GARAGEM'}</Text>
         </TouchableOpacity>
 
       </ScrollView>

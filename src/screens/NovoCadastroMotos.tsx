@@ -16,9 +16,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import * as ImagePicker from 'expo-image-picker';
 import * as ImageManipulator from 'expo-image-manipulator';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
-import { addDoc, collection } from 'firebase/firestore';
-import { db, auth } from '../services/firebase';
-import { uploadLocalImage } from '../services/imageUpload';
+import { useSalvarMoto, validarCadastroMoto } from '../hooks/useSalvarMoto';
 import { useTemporaryImage } from '../hooks/useTemporaryImage';
 import { removeTemporaryImage } from '../services/temporaryImages';
 
@@ -29,6 +27,8 @@ export function NovoCadastroMotos({ navigation, route }: any) {
   const [ano, setAno] = useState('');
   const [hodometro, setHodometro] = useState('');
   const [fotoUri, setFotoUri] = useTemporaryImage();
+  const { salvar, salvando } = useSalvarMoto(navigation);
+  const cadastro = { marca, modelo, apelido, ano, hodometro, fotoUri };
 
   // Captura os dados técnicos vindos da tela DadosTecnicos (se existirem)
   const dadosTecnicosRecebidos = route?.params?.dadosTecnicos || {};
@@ -69,49 +69,18 @@ export function NovoCadastroMotos({ navigation, route }: any) {
     }
   };
 
-  const handleSalvar = async () => {
-    if (!marca || !modelo || !hodometro) {
-      Alert.alert('Atenção', 'Preencha ao menos Marca, Modelo e KM Atual.');
+  const handleAbrirFicha = () => {
+    const erro = validarCadastroMoto(cadastro);
+    if (erro) {
+      Alert.alert('Atenção', erro);
       return;
     }
-
-    const hodometroNumero = Number(hodometro.replace(',', '.'));
-    if (!Number.isFinite(hodometroNumero) || hodometroNumero < 0) {
-      Alert.alert('KM inválida', 'Informe uma quilometragem válida.');
-      return;
-    }
-
-    try {
-      const user = auth.currentUser;
-      if (!user) {
-        Alert.alert('Erro', 'Você precisa estar logado para cadastrar uma moto.');
-        return;
-      }
-
-      const fotoUrl = fotoUri
-        ? await uploadLocalImage(fotoUri, `usuarios/${user.uid}/motos/${Date.now()}.jpg`)
-        : '';
-
-      // Gravação real no Cloud Firestore (agora unindo os dados básicos e técnicos)
-      await addDoc(collection(db, 'motos'), {
-        userId: user.uid,
-        marca,
-        modelo,
-        apelido,
-        ano,
-        hodometro: hodometroNumero,
-        fotoUri: fotoUrl,
-        ...dadosTecnicosRecebidos, // <- Aqui os dados técnicos entram no banco de dados
-        createdAt: new Date(),
-      });
-
-      Alert.alert('Sucesso', 'Moto salva na garagem!', [
-        { text: 'OK', onPress: () => navigation?.goBack() }
-      ]);
-    } catch (error: any) {
-      Alert.alert('Erro', 'Não foi possível salvar a moto: ' + error.message);
-    }
+    navigation.navigate('DadosTecnicos', {
+      cadastro, cadastroRouteKey: route.key, dadosTecnicos: dadosTecnicosRecebidos,
+    });
   };
+
+  const handleSalvar = () => salvar(cadastro, dadosTecnicosRecebidos);
 
   return (
     <SafeAreaView style={styles.container}>
@@ -132,6 +101,7 @@ export function NovoCadastroMotos({ navigation, route }: any) {
 
             <TouchableOpacity 
               style={styles.backButton} 
+              disabled={salvando}
               onPress={() => navigation?.goBack()}
             >
               <Text style={styles.backButtonText}>&lt;</Text>
@@ -146,7 +116,7 @@ export function NovoCadastroMotos({ navigation, route }: any) {
         >
           
           <View style={styles.photoSection}>
-            <TouchableOpacity style={styles.photoContainer} onPress={handlePickImage}>
+            <TouchableOpacity style={styles.photoContainer} onPress={handlePickImage} disabled={salvando}>
               {fotoUri ? (
                 <Image source={{ uri: fotoUri }} style={styles.motoPhoto} />
               ) : (
@@ -207,7 +177,8 @@ export function NovoCadastroMotos({ navigation, route }: any) {
 
           <TouchableOpacity 
                style={styles.btnOutline} 
-               onPress={() => navigation.navigate('DadosTecnicos')}
+               onPress={handleAbrirFicha}
+               disabled={salvando}
           >
               <MaterialCommunityIcons name="tools" size={18} color="#E53935" style={{ marginRight: 8 }} />
               <Text style={styles.btnOutlineText}>
@@ -215,8 +186,8 @@ export function NovoCadastroMotos({ navigation, route }: any) {
               </Text>
           </TouchableOpacity>
 
-          <TouchableOpacity style={styles.btnPrimary} onPress={handleSalvar}>
-            <Text style={styles.btnPrimaryText}>SALVAR NA GARAGEM</Text>
+          <TouchableOpacity style={styles.btnPrimary} onPress={handleSalvar} disabled={salvando}>
+            <Text style={styles.btnPrimaryText}>{salvando ? 'SALVANDO...' : 'SALVAR NA GARAGEM'}</Text>
           </TouchableOpacity>
 
         </ScrollView>

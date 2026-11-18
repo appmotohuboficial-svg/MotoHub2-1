@@ -109,10 +109,10 @@ test('fila recupera após erro; timeout não deixa spinner sem fim', async () =>
 test('versão, assets PNG e perfis mantêm IDs remotos de build', () => {
   const root = path.resolve(__dirname, '..');
   const app = require('../app.json').expo;
-  assert.equal(app.version,'2.0.3');
-  assert.equal(require('../package.json').version,'2.0.3');
-  assert.equal(require('../package-lock.json').version,'2.0.3');
-  assert.equal(require('../package-lock.json').packages[''].version,'2.0.3');
+  assert.equal(app.version,'2.1.0');
+  assert.equal(require('../package.json').version,'2.1.0');
+  assert.equal(require('../package-lock.json').version,'2.1.0');
+  assert.equal(require('../package-lock.json').packages[''].version,'2.1.0');
   assert.equal(require('../eas.json').cli.appVersionSource,'remote');
   assert.equal(require('../eas.json').build.preview.android.buildType,'apk');
   assert.ok(!('versionCode' in app.android));

@@ -1,4 +1,4 @@
-import React, { useState, useRef } from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 import {
   View,
   Text,
@@ -15,7 +15,7 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import DateTimePicker from '@react-native-community/datetimepicker';
-import { collection, doc, serverTimestamp, runTransaction } from 'firebase/firestore';
+import { collection, doc, getDoc, serverTimestamp, runTransaction } from 'firebase/firestore';
 import { db, auth } from '../services/firebase';
 
 import { dataLocal } from '../utils/datas';
@@ -24,7 +24,7 @@ export function FormularioManutencao({ route, navigation }: any) {
   const registro = route?.params?.registro;
   const trava = useRef(false);
   const [salvando, setSalvando] = useState(false);
-  const categoriaSelecionada = route?.params?.categoria || 'Geral';
+  const categoriaSelecionada = route?.params?.categoria || registro?.categoria || 'Geral';
   const motoId = route?.params?.motoId; // ID da moto passada por parâmetro
 
   const isAdministrativo = categoriaSelecionada === 'Seguro' || categoriaSelecionada === 'Documentos';
@@ -43,7 +43,13 @@ export function FormularioManutencao({ route, navigation }: any) {
   const [oficina, setOficina] = useState(String(registro?.oficina ?? ''));
   const [trocouFiltro, setTrocouFiltro] = useState(!!registro?.trocouFiltro);
   const [marcaOleo, setMarcaOleo] = useState(String(registro?.marcaOleo ?? ''));
-  const [posicao, setPosicao] = useState(String(registro?.posicao ?? '')); 
+  const [viscosidadeOleo, setViscosidadeOleo] = useState(String(registro?.viscosidadeOleo ?? ''));
+  const [viscosidadeRecomendada, setViscosidadeRecomendada] = useState('');
+  const [carregandoFicha, setCarregandoFicha] = useState(categoriaSelecionada === 'Óleo');
+  const [erroFicha, setErroFicha] = useState('');
+  const [tentativaFicha, setTentativaFicha] = useState(0);
+  const viscosidadeAlterada = useRef(false);
+  const [posicao, setPosicao] = useState(String(registro?.posicao ?? ''));
   const [marcaPeca, setMarcaPeca] = useState(String(registro?.marcaPeca ?? ''));
 
   // Estados Administrativos
@@ -54,14 +60,54 @@ export function FormularioManutencao({ route, navigation }: any) {
   const [valorPago, setValorPago] = useState(String(registro?.valorPago ?? ''));
   const [formaPagamento, setFormaPagamento] = useState(String(registro?.formaPagamento ?? ''));
 
+  useEffect(() => {
+    if (categoriaSelecionada !== 'Óleo') return;
+    let ativo = true;
+
+    const carregarFicha = async () => {
+      setCarregandoFicha(true);
+      setErroFicha('');
+      setViscosidadeRecomendada('');
+      try {
+        const userId = auth.currentUser?.uid;
+        if (!motoId || !userId) throw new Error('Selecione uma moto da sua conta.');
+        const moto = await getDoc(doc(db, 'motos', motoId));
+        if (!moto.exists() || moto.data().userId !== userId || auth.currentUser?.uid !== userId) {
+          throw new Error('Sem permissão para esta moto.');
+        }
+        if (!ativo) return;
+        const recomendada = String(moto.data().viscosidade ?? '').trim();
+        setViscosidadeRecomendada(recomendada);
+        // A especificação atual não deve reescrever o histórico nem a digitação do usuário.
+        if (!registro?.id && !viscosidadeAlterada.current) setViscosidadeOleo(recomendada);
+      } catch (error) {
+        if (ativo) setErroFicha('Não foi possível carregar a viscosidade da ficha técnica.');
+      } finally {
+        if (ativo) setCarregandoFicha(false);
+      }
+    };
+
+    carregarFicha();
+    return () => { ativo = false; };
+  }, [motoId, categoriaSelecionada, registro?.id, tentativaFicha]);
+
   const formatDate = (date: Date) => {
     return date.toLocaleDateString('pt-BR');
   };
 
   const handleSalvarManutencao = async () => {
-    if (trava.current) return;
+    if (trava.current || (categoriaSelecionada === 'Óleo' && carregandoFicha)) return;
     if (!motoId) {
       Alert.alert('Atenção', 'Nenhuma moto vinculada. Volte e selecione uma moto.');
+      return;
+    }
+    const userId = auth.currentUser?.uid;
+    if (!userId) {
+      Alert.alert('Atenção', 'Entre na sua conta para salvar a manutenção.');
+      return;
+    }
+    if (registro?.motoId && registro.motoId !== motoId) {
+      Alert.alert('Atenção', 'Este registro não pertence à moto selecionada.');
       return;
     }
 
@@ -76,6 +122,9 @@ export function FormularioManutencao({ route, navigation }: any) {
         observacoes,
         trocouFiltro,
         marcaOleo,
+        // Em registros antigos, mantenha o campo ausente até o usuário informá-lo.
+        ...(categoriaSelecionada === 'Óleo' && (!registro?.id || registro?.viscosidadeOleo != null || viscosidadeAlterada.current)
+          ? { viscosidadeOleo: viscosidadeOleo.trim() } : {}),
         posicao,
         marcaPeca,
         seguradora,
@@ -94,8 +143,9 @@ export function FormularioManutencao({ route, navigation }: any) {
       await runTransaction(db, async tx => {
         const moto = await tx.get(motoRef);
         const anterior = registro?.id ? await tx.get(registroRef) : null;
-        if (!auth.currentUser || moto.data()?.userId !== auth.currentUser.uid) throw new Error('Sem permissão para esta moto.');
+        if (!moto.exists() || auth.currentUser?.uid !== userId || moto.data().userId !== userId) throw new Error('Sem permissão para esta moto.');
         if (registro?.id && !anterior?.exists()) throw new Error('Registro não encontrado.');
+        if (anterior?.data()?.motoId && anterior.data()?.motoId !== motoId) throw new Error('Este registro não pertence à moto selecionada.');
         if (registro?.id) tx.update(registroRef, dadosManutencao);
         else tx.set(registroRef, { ...dadosManutencao, createdAt: serverTimestamp() });
         // Corrigir um registro antigo não deve reduzir o hodômetro atual.
@@ -132,10 +182,38 @@ export function FormularioManutencao({ route, navigation }: any) {
       case 'Óleo':
         return (
           <View style={styles.dynamicFieldsContainer}>
+            <Text style={styles.labelNotes}>VISCOSIDADE RECOMENDADA NA FICHA TÉCNICA</Text>
+            <Text style={styles.recommendationText}>
+              {carregandoFicha ? 'Carregando...' : erroFicha || viscosidadeRecomendada || 'Não cadastrada na ficha técnica.'}
+            </Text>
+            {!!erroFicha && (
+              <TouchableOpacity onPress={() => setTentativaFicha(valor => valor + 1)} accessibilityRole="button">
+                <Text style={styles.retryText}>Tentar novamente</Text>
+              </TouchableOpacity>
+            )}
+            <Text style={styles.labelNotes}>VISCOSIDADE DO ÓLEO UTILIZADO</Text>
             <TextInput
               style={styles.input}
-              placeholder="Marca e Viscosidade (Ex: Motul 10W40)"
+              placeholder={registro?.id ? 'Não informada neste registro' : 'Ex: 10W40'}
               placeholderTextColor="#777"
+              accessibilityLabel="Viscosidade do óleo utilizado"
+              value={viscosidadeOleo}
+              onChangeText={valor => {
+                viscosidadeAlterada.current = true;
+                setViscosidadeOleo(valor);
+              }}
+            />
+            {!!registro?.id && registro?.viscosidadeOleo == null && (
+              <Text style={styles.helperText}>
+                A viscosidade não foi registrada separadamente. O texto original da marca foi mantido; confira-o antes de preencher.
+              </Text>
+            )}
+            <Text style={styles.labelNotes}>MARCA DO ÓLEO</Text>
+            <TextInput
+              style={styles.input}
+              placeholder="Marca do óleo (Ex: Motul 7100)"
+              placeholderTextColor="#777"
+              accessibilityLabel="Marca do óleo"
               value={marcaOleo}
               onChangeText={setMarcaOleo}
             />
@@ -364,8 +442,8 @@ export function FormularioManutencao({ route, navigation }: any) {
             onChangeText={setObservacoes}
           />
 
-          <TouchableOpacity style={styles.btnPrimary} onPress={handleSalvarManutencao} disabled={salvando} activeOpacity={0.8}>
-            <Text style={styles.btnPrimaryText}>{salvando ? 'SALVANDO...' : registro?.id ? 'SALVAR ALTERAÇÕES' : 'SALVAR REGISTRO'}</Text>
+          <TouchableOpacity style={styles.btnPrimary} onPress={handleSalvarManutencao} disabled={salvando || (categoriaSelecionada === 'Óleo' && carregandoFicha)} activeOpacity={0.8}>
+            <Text style={styles.btnPrimaryText}>{salvando ? 'SALVANDO...' : categoriaSelecionada === 'Óleo' && carregandoFicha ? 'CARREGANDO FICHA...' : registro?.id ? 'SALVAR ALTERAÇÕES' : 'SALVAR REGISTRO'}</Text>
           </TouchableOpacity>
 
         </ScrollView>
@@ -391,6 +469,9 @@ const styles = StyleSheet.create({
   dateButton: { backgroundColor: '#1A1A1A', borderRadius: 8, height: 56, paddingHorizontal: 16, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12, borderWidth: 1, borderColor: '#2C2C2C' },
   dateButtonText: { color: '#FFFFFF', fontSize: 14 },
   dynamicFieldsContainer: { marginTop: 8, marginBottom: 8 },
+  recommendationText: { color: '#FFFFFF', fontSize: 14, marginBottom: 12 },
+  helperText: { color: '#AAAAAA', fontSize: 12, lineHeight: 18, marginBottom: 12 },
+  retryText: { color: '#E53935', fontSize: 14, fontWeight: 'bold', paddingVertical: 8, marginBottom: 8 },
   checkboxContainer: { flexDirection: 'row', alignItems: 'center', paddingVertical: 8, marginBottom: 8 },
   checkboxLabel: { color: '#FFFFFF', fontSize: 14, marginLeft: 12 },
   labelNotes: { color: '#AAAAAA', fontSize: 10, fontWeight: 'bold', marginTop: 8, marginBottom: 8 },

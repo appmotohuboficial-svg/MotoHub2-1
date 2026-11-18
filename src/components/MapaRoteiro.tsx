@@ -1,6 +1,6 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { ActivityIndicator, Alert, Linking, Modal, Platform, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
+import { SafeAreaProvider, SafeAreaView } from 'react-native-safe-area-context';
 import Constants from 'expo-constants';
 import MapView, { Marker, Polyline, PROVIDER_GOOGLE } from 'react-native-maps';
 import { CoordenadaRota, coordenadaValida, criarUrlGoogleMaps, regiaoDaRota } from '../utils/roteiro';
@@ -114,19 +114,21 @@ export function MapaRoteiro(props: Props) {
     </View>
     <Text style={styles.creditos}>Roteiro: © OpenStreetMap contributors • OSRM</Text>
     <Modal visible={ampliado} animationType="slide" onShow={() => setModalPronto(true)} onRequestClose={fecharMapa}>
-      <SafeAreaView style={styles.modal}>
-        <View style={styles.modalBar}>
-          <Text style={styles.titulo}>Mapa do roteiro</Text>
-          <TouchableOpacity accessibilityRole="button" style={styles.botao} onPress={fecharMapa}>
-            <Text style={styles.botaoTexto}>FECHAR</Text>
+      <SafeAreaProvider>
+        <SafeAreaView style={styles.modal}>
+          <View style={styles.modalBar}>
+            <Text style={styles.titulo}>Mapa do roteiro</Text>
+            <TouchableOpacity accessibilityRole="button" style={styles.botao} onPress={fecharMapa}>
+              <Text style={styles.botaoTexto}>FECHAR</Text>
+            </TouchableOpacity>
+          </View>
+          <View style={styles.mapa}>{visivel && ampliado && modalPronto && <MapaNativo {...props} />}</View>
+          <TouchableOpacity accessibilityRole="button" style={styles.botao} onPress={abrirExterno}>
+            <Text style={styles.botaoTexto}>ABRIR NO GOOGLE MAPS</Text>
           </TouchableOpacity>
-        </View>
-        <View style={styles.mapa}>{visivel && ampliado && modalPronto && <MapaNativo {...props} />}</View>
-        <TouchableOpacity accessibilityRole="button" style={styles.botao} onPress={abrirExterno}>
-          <Text style={styles.botaoTexto}>ABRIR NO GOOGLE MAPS</Text>
-        </TouchableOpacity>
-        <Text style={styles.creditos}>Roteiro: © OpenStreetMap contributors • OSRM</Text>
-      </SafeAreaView>
+          <Text style={styles.creditos}>Roteiro: © OpenStreetMap contributors • OSRM</Text>
+        </SafeAreaView>
+      </SafeAreaProvider>
     </Modal>
   </View>;
 }
@@ -143,7 +145,7 @@ const styles = StyleSheet.create({
   botaoTexto: { color: '#F76B67', fontSize: 11, fontWeight: 'bold' },
   creditos: { color: '#AAA', textAlign: 'center', fontSize: 10, paddingBottom: 6 },
   modal: { flex: 1, backgroundColor: '#121212' },
-  modalBar: { minHeight: 56, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: 16 },
+  modalBar: { minHeight: 72, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: 16, paddingTop: 16, paddingBottom: 8 },
   titulo: { fontSize: 18, color: '#FFF', fontWeight: 'bold' },
 });
 
